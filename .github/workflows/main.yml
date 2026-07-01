@@ -1,0 +1,53 @@
+name: Cross-Compile Darkhttpd for ARMv7
+
+on:
+  push:
+    tags: [ 'v*' ]  # 仅在打 tag 时触发，避免浪费额度
+  workflow_dispatch:   # 允许手动点击按钮触发
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04  # 使用较新的宿主机，交叉编译工具更完善
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+
+      - name: Compile darkhttpd (A7 Optimized)
+        env:
+          CC: arm-linux-gnueabihf-gcc
+          # 针对 Cortex-A7 顺序执行核心的深度优化
+          CFLAGS: >-
+            -O3 
+            -march=armv7-a 
+            -mtune=cortex-a7 
+            -mfpu=neon-vfpv4 
+            -mfloat-abi=hard
+            -flto=auto 
+            -ffast-math 
+            -funroll-loops 
+            -falign-functions=16 
+            -falign-jumps=8 
+            -falign-loops=8
+            -static
+          LDFLAGS: "-static -Wl,--gc-sections -Wl,-z,norelro"
+        run: |
+          make clean
+          make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+          
+          # 验证并输出产物信息
+          file darkhttpd
+          ls -lh darkhttpd
+          arm-linux-gnueabihf-strip --strip-all darkhttpd
+          ls -lh darkhttpd
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: darkhttpd-armv7l-static
+          path: darkhttpd
+          retention-days: 30
