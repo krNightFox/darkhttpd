@@ -1,40 +1,43 @@
-name: Build Static darkhttpd with musl
+name: Build Static darkhttpd (musl)
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  workflow_dispatch: # 允许在 GitHub 界面手动触发
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
+    # 关键修改：指定使用包含 musl 工具链的 Docker 镜像
+    container: 
+      image: messense/musl-cross-make:x86_64-armv7-softfloat
+      # 注意：如果你的目标是硬浮点(hf)，请换成 x86_64-armv7-hardfloat
+      # 如果是树莓派3/4等常见板子，通常是 hardfloat
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 使用 messense/musl-cross 镜像，它内置了 ARM 的 musl 交叉编译工具链
-      - name: Build darkhttpd with musl-gcc
+      - name: Compile with musl-gcc
         run: |
-          echo "🔨 Starting compilation with musl-gcc..."
+          echo "🔨 Compiling darkhttpd..."
+          # 在这个容器里，编译器名字通常就是 arm-linux-musleabihf-gcc
+          # 如果上面镜像不对，可以试试 arm-linux-musleabi-gcc (软浮点)
+          
           arm-linux-musleabihf-gcc -static \
             -O3 -flto=auto -funroll-loops \
             -march=armv7-a -mtune=cortex-a7 \
             -o darkhttpd darkhttpd.c
+            
+          echo "📏 Stripping binary..."
+          arm-linux-musleabihf-strip darkhttpd
           
-          echo "📏 Stripping debug symbols..."
-          arm-linux-musleabihf-strip --strip-all darkhttpd
-          
-          echo "📦 Final binary info:"
+          echo "✅ Done! Size:"
           ls -lh darkhttpd
-          file darkhttpd
 
-      # 将编译好的二进制文件作为 Artifact 上传，方便你下载
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-armv7-musl-static
+          name: darkhttpd-musl-static
           path: darkhttpd
-          retention-days: 7
