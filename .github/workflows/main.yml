@@ -33,7 +33,7 @@ jobs:
           # -mfloat-abi=hard: 强制硬件浮点（性能关键）
           # -O3: 最高级别速度优化
           # -flto: 链接时优化，进一步减小体积提升速度
-          export CFLAGS="-mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O3 -flto -ffast-math"
+          export CFLAGS="-mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O3 -flto -ffast-math -static"
           
           # 直接编译当前目录下的 darkhttpd.c
           # 如果不确定文件名，可以使用 ls *.c 查看
