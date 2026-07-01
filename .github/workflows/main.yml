@@ -1,4 +1,4 @@
-name: Build Static darkhttpd (True Musl + Cortex-A7)
+name: Build Static darkhttpd (Musl Cross-Make)
 
 on:
   push:
@@ -13,32 +13,42 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Cross-Compiler & Musl Tools
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          # 关键：安装 ARM 架构的 musl 开发包
-          sudo apt-get install -y gcc-arm-linux-gnueabihf musl-tools musl-dev:armhf
+          sudo apt-get install -y git make gcc g++ bison flex texinfo help2man gawk libtool-bin python3 wget cpio unzip rsync
 
-      - name: Compile for Cortex-A7 + NEON with Musl
+      - name: Clone and Build musl-cross-make
         run: |
+          git clone https://github.com/richfelker/musl-cross-make.git
+          cd musl-cross-make
+          # 配置目标为 arm-linux-musleabihf (对应你的 Cortex-A7 + 硬浮点)
+          echo "TARGET = arm-linux-musleabihf" > config.mak
+          echo "OUTPUT = /opt/musl-cross" >> config.mak
+          make -j$(nproc)
+          sudo make install
+
+      - name: Compile darkhttpd with Musl
+        run: |
+          export PATH="/opt/musl-cross/bin:$PATH"
+          
           echo "🔨 Compiling optimized darkhttpd for Hi3798MV100..."
           
-          # 获取 musl:armhf 的安装路径
-          MUSL_PATH=$(dpkg -L musl-dev:armhf | grep '/include$' | head -1 | sed 's|/include||')
-          
-          # 使用 arm-linux-gnueabihf-gcc 配合 musl 路径进行编译
-          arm-linux-gnueabihf-gcc \
-            -march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard \
-            -nostdinc -isystem ${MUSL_PATH}/include \
-            -L${MUSL_PATH}/lib -static \
-            -Os -s \
+          # 使用 musl 交叉编译器编译
+          # -mcpu=cortex-a7: 针对 A7 优化
+          # -mfpu=neon-vfpv4: 开启 NEON 和 VFPv4
+          # -static: 静态链接 musl
+          arm-linux-musleabihf-gcc -O2 -mcpu=cortex-a7 -mfpu=neon-vfpv4 -static \
             -o darkhttpd darkhttpd.c
           
-          echo "✅ Compilation successful!"
+          # 自动 strip
+          arm-linux-musleabihf-strip darkhttpd
+          
+          echo "✅ Build complete!"
           ls -lh darkhttpd
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-hi3798mv100-musl-static
+          name: darkhttpd-hi3798mv100
           path: darkhttpd
