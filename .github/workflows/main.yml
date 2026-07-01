@@ -1,9 +1,9 @@
-name: Build Static darkhttpd (musl + armhf)
+name: Build darkhttpd for Hi3798MV100 (Optimized)
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,32 +16,37 @@ jobs:
       - name: Install Cross-Compiler & Musl Tools
         run: |
           sudo apt-get update
-          # 1. 安装 musl 工具包 (提供 musl-gcc 包装器)
-          # 2. 安装 ARM 交叉编译器 (提供 arm-linux-gnueabihf-gcc)
+          # 安装 musl 工具包 和 ARM 交叉编译器
           sudo apt-get install -y musl-tools gcc-arm-linux-gnueabihf
 
-      - name: Compile with musl (Static)
+      - name: Compile for Cortex-A7 + NEON
         run: |
-          echo "🔨 Compiling darkhttpd for ARM..."
+          echo "🔨 Compiling optimized binary for Hi3798MV100..."
           
-          # 关键点：使用 arm-linux-gnueabihf-gcc 作为编译器
-          # 并指定 sysroot 为 musl 的头文件和库路径
-          # 这样既用了 ARM 编译器，又链接了 musl 库
+          # 定义针对 Cortex-A7 的专用优化参数
+          # -mcpu=cortex-a7: 针对 A7 核心进行指令调度优化
+          # -mfpu=neon-vfpv4: 启用 NEON 和 VFPv4 浮点单元
+          # -mfloat-abi=hard: 使用硬件浮点寄存器传参（高性能）
+          OPT_FLAGS="-mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard"
           
+          # 使用 arm-linux-gnueabihf-gcc 配合 musl 静态库进行编译
+          # 注意：这里直接使用 gnueabihf 编译器，它默认就是 hard float
+          # 我们只需要覆盖 fpu 和 cpu 类型即可
+          # 强制指定 musl 的 crt 文件和库路径
+          MUSL_PATH=/usr/arm-linux-gnueabihf
           arm-linux-gnueabihf-gcc \
-            --sysroot=/usr \
-            -static \
-            -O3 -flto=auto -funroll-loops \
-            -march=armv7-a -mtune=cortex-a7 \
-            -o darkhttpd darkhttpd.c \
-            -I/usr/include/arm-linux-musleabihf \
-            -L/usr/lib/arm-linux-musleabihf
+          --sysroot=${MUSL_PATH} \
+          -static \
+          -O3 -flto \
+          ${OPT_FLAGS} \
+          -o darkhttpd \
+          darkhttpd.c
 
-          echo "📏 Stripping binary..."
-          arm-linux-gnueabihf-strip darkhttpd
+          echo "✅ Compilation successful!"
+          file darkhttpd
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-static-musl-armhf
+          name: darkhttpd-hi3798mv100
           path: darkhttpd
