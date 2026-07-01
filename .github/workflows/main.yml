@@ -1,8 +1,8 @@
-name: Build Optimized darkhttpd for Hi3798MV100
+name: Build Optimized darkhttpd (Hi3798MV100)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ] # 适配你的默认分支名
   workflow_dispatch:
 
 jobs:
@@ -10,8 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout Code
+      - name: Checkout Your Forked Code
         uses: actions/checkout@v4
+        # 这一步会自动把你 Fork 的仓库代码下载到当前目录
 
       - name: Install Cross-Compiler
         run: |
@@ -19,28 +20,30 @@ jobs:
           # 安装标准的 ARM 硬浮点交叉编译器
           sudo apt-get install -y gcc-arm-linux-gnueabihf
 
-      - name: Compile with Performance Flags
+      - name: Compile with Max Performance Flags
         run: |
           echo "🔨 Compiling for Cortex-A7 + NEON + VFPv4..."
           
-          # 定义针对 Hi3798MV100 (Cortex-A7) 的极致优化参数
+          # 设置交叉编译器
           export CC=arm-linux-gnueabihf-gcc
-          export CFLAGS="-march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O3 -ffast-math -funroll-loops"
-          export LDFLAGS="-s" # -s 代表 strip，去除调试信息，减小体积
-
-          # 下载并编译 darkhttpd
-          wget https://github.com/nicm/darkhttpd/archive/refs/heads/master.tar.gz -O darkhttpd.tar.gz
-          tar xzf darkhttpd.tar.gz
-          cd darkhttpd-master
           
-          make clean
-          make
+          # 针对 Hi3798MV100 (Cortex-A7) 的极致优化参数
+          # -mcpu=cortex-a7: 指定CPU架构
+          # -mfpu=neon-vfpv4: 开启NEON和VFPv4浮点运算
+          # -mfloat-abi=hard: 强制硬件浮点（性能关键）
+          # -O3: 最高级别速度优化
+          # -flto: 链接时优化，进一步减小体积提升速度
+          export CFLAGS="-mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O3 -flto -ffast-math"
           
-          # 验证架构
+          # 直接编译当前目录下的 darkhttpd.c
+          # 如果不确定文件名，可以使用 ls *.c 查看
+          $CC $CFLAGS -o darkhttpd darkhttpd.c -s
+          
+          echo "✅ Compilation finished."
           file darkhttpd
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: darkhttpd-hi3798mv100
-          path: darkhttpd-master/darkhttpd
+          path: darkhttpd
