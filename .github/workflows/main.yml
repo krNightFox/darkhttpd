@@ -16,36 +16,29 @@ jobs:
       - name: Install Cross-Compiler & Musl Tools
         run: |
           sudo apt-get update
-          # 安装 musl 工具包 和 ARM 交叉编译器
-          sudo apt-get install -y musl-tools gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+          # 关键：安装 ARM 架构的 musl 开发包
+          sudo apt-get install -y gcc-arm-linux-gnueabihf musl-tools musl-dev:armhf
 
-      - name: Compile for Cortex-A7 + NEON (Musl Static)
+      - name: Compile for Cortex-A7 + NEON with Musl
         run: |
           echo "🔨 Compiling optimized darkhttpd for Hi3798MV100..."
           
-          # 找到 musl 的安装路径 (通常在 /usr/musl/arm-linux-musleabihf)
-          MUSL_PATH=$(dpkg -L musl:armhf | grep "include" | head -n 1 | sed 's|/include||')
+          # 获取 musl:armhf 的安装路径
+          MUSL_PATH=$(dpkg -L musl-dev:armhf | grep '/include$' | head -1 | sed 's|/include||')
           
-          # 核心编译命令
+          # 使用 arm-linux-gnueabihf-gcc 配合 musl 路径进行编译
           arm-linux-gnueabihf-gcc \
-            -o darkhttpd darkhttpd.c \
-            -O3 -flto \
             -march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard \
-            -mthumb \
-            -ffunction-sections -fdata-sections \
-            -Wl,--gc-sections -static \
-            -nostdinc \
-            -I${MUSL_PATH}/include \
-            -L${MUSL_PATH}/lib \
-            -B${MUSL_PATH}/lib \
-            -idirafter /usr/arm-linux-gnueabihf/include \
-            -idirafter /usr/include
-
-          echo "✅ Compilation finished."
+            -nostdinc -isystem ${MUSL_PATH}/include \
+            -L${MUSL_PATH}/lib -static \
+            -Os -s \
+            -o darkhttpd darkhttpd.c
+          
+          echo "✅ Compilation successful!"
           ls -lh darkhttpd
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-hi3798mv100-musl
+          name: darkhttpd-hi3798mv100-musl-static
           path: darkhttpd
