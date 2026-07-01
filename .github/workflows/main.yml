@@ -9,35 +9,32 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # 关键修改：指定使用包含 musl 工具链的 Docker 镜像
-    container: 
-      image: messense/musl-cross-make:x86_64-armv7-hardfloat
-      # 注意：如果你的目标是硬浮点(hf)，请换成 x86_64-armv7-hardfloat
-      # 如果是树莓派3/4等常见板子，通常是 hardfloat
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Compile with musl-gcc
+      - name: Install musl tools and cross-compiler
         run: |
-          echo "🔨 Compiling darkhttpd..."
-          # 在这个容器里，编译器名字通常就是 arm-linux-musleabihf-gcc
-          # 如果上面镜像不对，可以试试 arm-linux-musleabi-gcc (软浮点)
-          
-          arm-linux-musleabihf-gcc -static \
+          sudo apt-get update
+          sudo apt-get install -y musl-tools gcc-arm-linux-gnueabihf
+
+      - name: Compile with musl-gcc (static)
+        run: |
+          echo "🔨 Compiling darkhttpd with musl-gcc..."
+          # 使用 musl-gcc 进行静态编译
+          musl-gcc -static \
             -O3 -flto=auto -funroll-loops \
             -march=armv7-a -mtune=cortex-a7 \
             -o darkhttpd darkhttpd.c
-            
-          echo "📏 Stripping binary..."
-          arm-linux-musleabihf-strip darkhttpd
           
-          echo "✅ Done! Size:"
+          echo "📏 Stripping debug symbols..."
+          strip darkhttpd
+          
+          echo "✅ Build complete! File size:"
           ls -lh darkhttpd
 
-      - name: Upload Artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-musl-static
+          name: darkhttpd-static-musl
           path: darkhttpd
