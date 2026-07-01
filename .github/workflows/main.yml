@@ -1,4 +1,4 @@
-name: Build darkhttpd for Hi3798MV100 (Optimized)
+name: Build Static darkhttpd (True Musl + Cortex-A7)
 
 on:
   push:
@@ -17,36 +17,35 @@ jobs:
         run: |
           sudo apt-get update
           # 安装 musl 工具包 和 ARM 交叉编译器
-          sudo apt-get install -y musl-tools gcc-arm-linux-gnueabihf
+          sudo apt-get install -y musl-tools gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 
-      - name: Compile for Cortex-A7 + NEON
+      - name: Compile for Cortex-A7 + NEON (Musl Static)
         run: |
-          echo "🔨 Compiling optimized binary for Hi3798MV100..."
+          echo "🔨 Compiling optimized darkhttpd for Hi3798MV100..."
           
-          # 定义针对 Cortex-A7 的专用优化参数
-          # -mcpu=cortex-a7: 针对 A7 核心进行指令调度优化
-          # -mfpu=neon-vfpv4: 启用 NEON 和 VFPv4 浮点单元
-          # -mfloat-abi=hard: 使用硬件浮点寄存器传参（高性能）
-          OPT_FLAGS="-mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard"
+          # 找到 musl 的安装路径 (通常在 /usr/musl/arm-linux-musleabihf)
+          MUSL_PATH=$(dpkg -L musl:armhf | grep "include" | head -n 1 | sed 's|/include||')
           
-          # 使用 arm-linux-gnueabihf-gcc 配合 musl 静态库进行编译
-          # 注意：这里直接使用 gnueabihf 编译器，它默认就是 hard float
-          # 我们只需要覆盖 fpu 和 cpu 类型即可
-          # 强制指定 musl 的 crt 文件和库路径
-          MUSL_PATH=/usr/arm-linux-gnueabihf
+          # 核心编译命令
           arm-linux-gnueabihf-gcc \
-          --sysroot=${MUSL_PATH} \
-          -static \
-          -O3 -flto \
-          ${OPT_FLAGS} \
-          -o darkhttpd \
-          darkhttpd.c
+            -o darkhttpd darkhttpd.c \
+            -O3 -flto \
+            -march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard \
+            -mthumb \
+            -ffunction-sections -fdata-sections \
+            -Wl,--gc-sections -static \
+            -nostdinc \
+            -I${MUSL_PATH}/include \
+            -L${MUSL_PATH}/lib \
+            -B${MUSL_PATH}/lib \
+            -idirafter /usr/arm-linux-gnueabihf/include \
+            -idirafter /usr/include
 
-          echo "✅ Compilation successful!"
-          file darkhttpd
+          echo "✅ Compilation finished."
+          ls -lh darkhttpd
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-hi3798mv100
+          name: darkhttpd-hi3798mv100-musl
           path: darkhttpd
