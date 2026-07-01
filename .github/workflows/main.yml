@@ -1,70 +1,84 @@
-name: Build Static darkhttpd (Musl Cross-Make)
+name: Build darkhttpd (Musl Static + A7 Optimized)
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git make gcc g++ bison flex texinfo help2man gawk libtool-bin python3 wget cpio unzip rsync
-      
-      - name: Clone and Build musl-cross-make
+          # 安装编译 musl-cross-make 所需的基础工具
+          sudo apt-get install -y git make gcc g++ bison flex texinfo help2man \
+            gawk libtool-bin python3 wget cpio unzip rsync file
+
+      - name: Setup Musl Cross-Compiler (With Mirror Fix)
         run: |
+          echo "🔨 Cloning musl-cross-make..."
           git clone https://github.com/richfelker/musl-cross-make.git
           cd musl-cross-make
-    
-          # 创建 config.mak 文件，指定使用清华镜像源
+          
+          # 关键修复：创建配置文件，指定国内镜像源解决下载失败问题
           cat > config.mak << 'EOF'
-      TARGET = arm-linux-musleabihf
-      OUTPUT = /opt/cross
-      GCC_VER = 13.2.0
-      MUSL_VER = 1.2.5
-      BINUTILS_VER = 2.42
-      LINUX_VER = 6.7
-      GMP_VER = 6.3.0
-      MPFR_VER = 4.2.1
-      MPC_VER = 1.3.1
-      ISL_VER = 0.26
+          TARGET = arm-linux-musleabihf
+          OUTPUT = /opt/cross
+          GCC_VER = 13.2.0
+          MUSL_VER = 1.2.5
+          BINUTILS_VER = 2.42
+          LINUX_VER = 6.1
+          
+          # 使用清华大学开源软件镜像站
+          GNU_MIRROR = https://mirrors.tuna.tsinghua.edu.cn/gnu
+          MUSL_MIRROR = https://musl.libc.org/releases
+          KERNEL_MIRROR = https://mirrors.tuna.tsinghua.edu.cn/kernel
+          EOF
+          
+          echo "⏳ Building cross-compiler (this takes time)..."
+          # 使用多线程编译加速
+          make -j$(nproc) || { echo "Build failed. Check logs."; exit 1; }
+          
+          # 验证编译器是否生成成功
+          ls -lh /opt/cross/bin/arm-linux-musleabihf-gcc
 
-      # 关键：指定 GNU 官方源码的国内镜像
-      GNU_MIRROR = https://mirrors.tuna.tsinghua.edu.cn/gnu
-      EOF
-
-        # 开始编译
-          make -j$(nproc)
-          sudo make install
-
-      - name: Compile darkhttpd with Musl
+      - name: Compile darkhttpd
         run: |
-          export PATH="/opt/musl-cross/bin:$PATH"
+          export PATH="/opt/cross/bin:$PATH"
           
-          echo "🔨 Compiling optimized darkhttpd for Hi3798MV100..."
+          echo "🔨 Compiling darkhttpd with optimizations..."
+          # 针对 Cortex-A7 + NEON 的优化参数
+          CFLAGS="-O3 -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -ffunction-sections -fdata-sections" \
+          LDFLAGS="-static -Wl,--gc-sections" \
+          CC=arm-linux-musleabihf-gcc \
+          make -C . clean && make -C .
           
-          # 使用 musl 交叉编译器编译
-          # -mcpu=cortex-a7: 针对 A7 优化
-          # -mfpu=neon-vfpv4: 开启 NEON 和 VFPv4
-          # -static: 静态链接 musl
-          arm-linux-musleabihf-gcc -O2 -mcpu=cortex-a7 -mfpu=neon-vfpv4 -static \
-            -o darkhttpd darkhttpd.c
+          echo "✅ Compilation finished."
+          ls -lh darkhttpd
+
+      - name: Optimize & Verify Binary
+        run: |
+          export PATH="/opt/cross/bin:$PATH"
           
-          # 自动 strip
+          # 1. 检查文件类型
+          file darkhttpd
+          
+          # 2. 剥离调试符号（大幅减小体积）
           arm-linux-musleabihf-strip darkhttpd
           
-          echo "✅ Build complete!"
+          # 3. 最终确认
+          echo "--- Final Result ---"
           ls -lh darkhttpd
+          ldd darkhttpd || echo "(Expected: not a dynamic executable)"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-hi3798mv100
+          name: darkhttpd-arm-musl-static
           path: darkhttpd
