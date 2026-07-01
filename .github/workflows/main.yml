@@ -1,62 +1,40 @@
-name: Cross-Compile Darkhttpd for ARMv7
+name: Build Static darkhttpd with musl
 
 on:
   push:
-    tags: [ 'v*' ]
-  workflow_dispatch:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # 允许在 GitHub 界面手动触发
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout source
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. 缓存 APT 包（核心提速点，第二次运行直接秒装）
-      - name: Cache apt packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
-          key: ${{ runner.os }}-apt-arm-cross-compiler-v1
-
-      # 2. 替换阿里云镜像源并安装工具链
-      - name: Switch to Aliyun mirror & Install cross-compiler
+      # 使用 messense/musl-cross 镜像，它内置了 ARM 的 musl 交叉编译工具链
+      - name: Build darkhttpd with musl-gcc
         run: |
-          sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
-          sudo sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
-          sudo apt-get update -y
-          sudo apt-get install -y gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
-
-      # 3. 针对 Cortex-A7 极致压榨性能编译
-      - name: Compile darkhttpd (A7 Optimized)
-        env:
-          CC: arm-linux-gnueabihf-gcc
-          CFLAGS: >-
-            -O3 
-            -march=armv7-a 
-            -mtune=cortex-a7 
-            -mfpu=neon-vfpv4 
-            -mfloat-abi=hard
-            -flto=auto 
-            -funroll-loops 
-            -falign-functions=16 
-            -falign-jumps=8 
-            -falign-loops=8
-            -static
-          LDFLAGS: "-static -Wl,--gc-sections -Wl,-z,norelro"
-        run: |
-          make clean
-          make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
-          arm-linux-gnueabihf-strip --strip-all darkhttpd
+          echo "🔨 Starting compilation with musl-gcc..."
+          arm-linux-musleabihf-gcc -static \
+            -O3 -flto=auto -funroll-loops \
+            -march=armv7-a -mtune=cortex-a7 \
+            -o darkhttpd darkhttpd.c
+          
+          echo "📏 Stripping debug symbols..."
+          arm-linux-musleabihf-strip --strip-all darkhttpd
+          
+          echo "📦 Final binary info:"
           ls -lh darkhttpd
+          file darkhttpd
 
-      # 4. 上传编译产物
-      - name: Upload artifact
+      # 将编译好的二进制文件作为 Artifact 上传，方便你下载
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-armv7l-static
+          name: darkhttpd-armv7-musl-static
           path: darkhttpd
-          retention-days: 30
+          retention-days: 7
