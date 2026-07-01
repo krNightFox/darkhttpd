@@ -11,7 +11,7 @@ jobs:
     
     # 关键修改：指定使用包含 musl 工具链的 Docker 镜像
     container: 
-      image: messense/musl-cross-make:x86_64-armv7-softfloat
+      image: messense/musl-cross-make:x86_64-armv7-hardfloat
       # 注意：如果你的目标是硬浮点(hf)，请换成 x86_64-armv7-hardfloat
       # 如果是树莓派3/4等常见板子，通常是 hardfloat
 
