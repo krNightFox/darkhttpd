@@ -1,4 +1,4 @@
-name: Build Static darkhttpd (musl)
+name: Build Static darkhttpd (musl + armhf)
 
 on:
   push:
@@ -13,28 +13,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install musl tools and cross-compiler
+      - name: Install Cross-Compiler & Musl Tools
         run: |
           sudo apt-get update
+          # 1. 安装 musl 工具包 (提供 musl-gcc 包装器)
+          # 2. 安装 ARM 交叉编译器 (提供 arm-linux-gnueabihf-gcc)
           sudo apt-get install -y musl-tools gcc-arm-linux-gnueabihf
 
-      - name: Compile with musl-gcc (static)
+      - name: Compile with musl (Static)
         run: |
-          echo "🔨 Compiling darkhttpd with musl-gcc..."
-          # 使用 musl-gcc 进行静态编译
-          musl-gcc -static \
+          echo "🔨 Compiling darkhttpd for ARM..."
+          
+          # 关键点：使用 arm-linux-gnueabihf-gcc 作为编译器
+          # 并指定 sysroot 为 musl 的头文件和库路径
+          # 这样既用了 ARM 编译器，又链接了 musl 库
+          
+          arm-linux-gnueabihf-gcc \
+            --sysroot=/usr \
+            -static \
             -O3 -flto=auto -funroll-loops \
             -march=armv7-a -mtune=cortex-a7 \
-            -o darkhttpd darkhttpd.c
-          
-          echo "📏 Stripping debug symbols..."
-          strip darkhttpd
-          
-          echo "✅ Build complete! File size:"
-          ls -lh darkhttpd
+            -o darkhttpd darkhttpd.c \
+            -I/usr/include/arm-linux-musleabihf \
+            -L/usr/lib/arm-linux-musleabihf
 
-      - name: Upload artifact
+          echo "📏 Stripping binary..."
+          arm-linux-gnueabihf-strip darkhttpd
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkhttpd-static-musl
+          name: darkhttpd-static-musl-armhf
           path: darkhttpd
